@@ -2629,3 +2629,91 @@ func TestResolveTunnelForClientConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestParseAndValidateConfigBytesWithSecretFile(t *testing.T) {
+	file := t.TempDir() + "/secret"
+	// With a trailing newline, which is what echo and most editors produce.
+	if err := os.WriteFile(file, []byte("super-secret-token\n"), 0600); err != nil {
+		t.Fatal("expected no error, got", err.Error())
+	}
+	t.Setenv("MY_TOKEN_FILE", file)
+	config, err := parseAndValidateConfigBytes([]byte(`
+endpoints:
+  - name: website
+    url: https://twin.sh/health
+    headers:
+      Authorization: "Bearer ${MY_TOKEN}"
+    conditions:
+      - "[STATUS] == 200"
+`))
+	if err != nil {
+		t.Fatal("expected no error, got", err.Error())
+	}
+	if config.Endpoints[0].Headers["Authorization"] != "Bearer super-secret-token" {
+		t.Errorf("expected the secret file contents, got %s", config.Endpoints[0].Headers["Authorization"])
+	}
+}
+
+func TestParseAndValidateConfigBytesWithSecretFilePrecedence(t *testing.T) {
+	file := t.TempDir() + "/secret"
+	if err := os.WriteFile(file, []byte("from-file"), 0600); err != nil {
+		t.Fatal("expected no error, got", err.Error())
+	}
+	// Both set: the file takes precedence.
+	t.Setenv("MY_TOKEN", "from-environment")
+	t.Setenv("MY_TOKEN_FILE", file)
+	config, err := parseAndValidateConfigBytes([]byte(`
+endpoints:
+  - name: website
+    url: https://twin.sh/health
+    headers:
+      Authorization: "${MY_TOKEN}"
+    conditions:
+      - "[STATUS] == 200"
+`))
+	if err != nil {
+		t.Fatal("expected no error, got", err.Error())
+	}
+	if config.Endpoints[0].Headers["Authorization"] != "from-file" {
+		t.Errorf("expected from-file, got %s", config.Endpoints[0].Headers["Authorization"])
+	}
+}
+
+func TestParseAndValidateConfigBytesWithoutSecretFileFallsBackToEnvironment(t *testing.T) {
+	t.Setenv("MY_TOKEN", "from-environment")
+	config, err := parseAndValidateConfigBytes([]byte(`
+endpoints:
+  - name: website
+    url: https://twin.sh/health
+    headers:
+      Authorization: "${MY_TOKEN}"
+    conditions:
+      - "[STATUS] == 200"
+`))
+	if err != nil {
+		t.Fatal("expected no error, got", err.Error())
+	}
+	if config.Endpoints[0].Headers["Authorization"] != "from-environment" {
+		t.Errorf("expected from-environment, got %s", config.Endpoints[0].Headers["Authorization"])
+	}
+}
+
+func TestParseAndValidateConfigBytesWithUnreadableSecretFile(t *testing.T) {
+	// A missing file logs and yields empty rather than failing to start.
+	t.Setenv("MY_TOKEN_FILE", t.TempDir()+"/does-not-exist")
+	config, err := parseAndValidateConfigBytes([]byte(`
+endpoints:
+  - name: website
+    url: https://twin.sh/health
+    headers:
+      Authorization: "${MY_TOKEN}"
+    conditions:
+      - "[STATUS] == 200"
+`))
+	if err != nil {
+		t.Fatal("expected no error, got", err.Error())
+	}
+	if config.Endpoints[0].Headers["Authorization"] != "" {
+		t.Errorf("expected empty, got %s", config.Endpoints[0].Headers["Authorization"])
+	}
+}

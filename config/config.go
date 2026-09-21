@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -284,7 +285,7 @@ func parseAndValidateConfigBytes(yamlBytes []byte) (config *Config, err error) {
 	// environment variable. This allows Gatus to support literal "$" in the configuration file.
 	yamlBytes = []byte(strings.ReplaceAll(string(yamlBytes), "$$", "__GATUS_LITERAL_DOLLAR_SIGN__"))
 	// Expand environment variables
-	yamlBytes = []byte(os.ExpandEnv(string(yamlBytes)))
+	yamlBytes = []byte(os.Expand(string(yamlBytes), expandEnvironmentVariable))
 	// Replace __GATUS_LITERAL_DOLLAR_SIGN__ with "$" to restore the literal "$" in the configuration file
 	yamlBytes = []byte(strings.ReplaceAll(string(yamlBytes), "__GATUS_LITERAL_DOLLAR_SIGN__", "$"))
 	// Parse configuration file
@@ -343,6 +344,36 @@ func parseAndValidateConfigBytes(yamlBytes []byte) (config *Config, err error) {
 		config.UI.MaximumNumberOfResults = config.Storage.MaximumNumberOfResults
 	}
 	return
+}
+
+// expandEnvironmentVariable resolves ${NAME} in a configuration file. If
+// ${NAME}_FILE is set, the value is read from the file it names; otherwise the
+// environment variable is used.
+//
+// This allows secrets to be supplied as files, which is the only option on
+// platforms where a secret cannot be surfaced as an environment variable.
+func expandEnvironmentVariable(name string) string {
+	secretPathVariableName := name + "_FILE"
+	secretPath, isSet := os.LookupEnv(secretPathVariableName)
+	if !isSet {
+		return os.Getenv(name)
+	}
+	secretFile, err := os.Open(secretPath)
+	if err != nil {
+		logr.Errorf("[config.expandEnvironmentVariable] Failed to open %s=%s: %s", secretPathVariableName, secretPath, err.Error())
+		return ""
+	}
+	defer func() {
+		_ = secretFile.Close()
+	}()
+	secretBytes, err := io.ReadAll(secretFile)
+	if err != nil {
+		logr.Errorf("[config.expandEnvironmentVariable] Failed to read %s=%s: %s", secretPathVariableName, secretPath, err.Error())
+		return ""
+	}
+	// Trimmed, because files written by echo or saved by an editor carry a
+	// trailing newline.
+	return strings.TrimSpace(string(secretBytes))
 }
 
 func ValidateConnectivityConfig(config *Config) error {
