@@ -54,7 +54,7 @@ jobs:
       - name: Test
         run: |
           go test ./config/... -run TestParseAndValidateConfigBytes -v
-          go test ./storage/store/sql/... -run 'Backup|UntilMinute|StartSQLite' -v
+          go test ./storage/store/sql/... -run 'Backup|UntilMinute|StartSQLite|SQLiteFilePath' -v
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4

@@ -81,6 +81,41 @@ func TestStore_BackupRefusesTheDatabase(t *testing.T) {
 	}
 }
 
+func TestStore_BackupRefusesTheDatabaseOpenedByURI(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := dir + "/TestStore_BackupRefusesTheDatabaseOpenedByURI.db"
+	store, err := NewStore("sqlite", "file:"+dbPath+"?mode=rwc", false, storage.DefaultMaximumNumberOfResults, storage.DefaultMaximumNumberOfEvents)
+	if err != nil {
+		t.Fatal("expected no error, got", err.Error())
+	}
+	defer store.Close()
+	for _, path := range []string{dbPath, dbPath + "-wal"} {
+		if err := store.Backup(path); !errors.Is(err, ErrBackupPathIsDatabase) {
+			t.Errorf("Backup(%s): expected ErrBackupPathIsDatabase, got %v", path, err)
+		}
+	}
+	if err := store.Backup(dir + "/backup/gatus.db"); err != nil {
+		t.Error("expected a backup elsewhere to work, got", err)
+	}
+}
+
+func TestSQLiteFilePath(t *testing.T) {
+	scenarios := map[string]string{
+		"/data/gatus.db":                      "/data/gatus.db",
+		"data/gatus.db":                       "data/gatus.db",
+		"file:/data/gatus.db?mode=rwc":        "/data/gatus.db",
+		"file:///data/gatus.db":               "/data/gatus.db",
+		"file://localhost/data/gatus.db?x=1":  "/data/gatus.db",
+		"file:data/gatus.db":                  "data/gatus.db",
+		"file:/data/my%20gatus.db?cache=priv": "/data/my gatus.db",
+	}
+	for in, expected := range scenarios {
+		if actual := sqliteFilePath(in); actual != expected {
+			t.Errorf("sqliteFilePath(%s): expected %s, got %s", in, expected, actual)
+		}
+	}
+}
+
 func TestStore_BackupWithBlankPath(t *testing.T) {
 	store, _ := NewStore("sqlite", t.TempDir()+"/TestStore_BackupWithBlankPath.db", false, storage.DefaultMaximumNumberOfResults, storage.DefaultMaximumNumberOfEvents)
 	defer store.Close()
