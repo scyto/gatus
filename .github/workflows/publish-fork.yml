@@ -21,6 +21,7 @@ on:
   push:
     tags:
       - "v*-secrets"
+      - "v*-secrets-backup"
   workflow_dispatch:
     inputs:
       tag:
@@ -51,7 +52,9 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Test
-        run: go test ./config/... -run TestParseAndValidateConfigBytes -v
+        run: |
+          go test ./config/... -run TestParseAndValidateConfigBytes -v
+          go test ./storage/store/sql/... -run 'Backup|UntilMinute|StartSQLite' -v
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4

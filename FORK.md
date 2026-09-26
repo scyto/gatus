@@ -1,8 +1,8 @@
 # This is a fork
 
-Upstream: [TwiN/gatus](https://github.com/TwiN/gatus). This fork exists for **one change**, kept deliberately small so it can be rebased onto each upstream release and dropped entirely if upstream ever takes it.
+Upstream: [TwiN/gatus](https://github.com/TwiN/gatus). This fork exists for **two changes**, each kept deliberately small so it can be rebased onto each upstream release and dropped if upstream ever takes it.
 
-## The change
+## Change 1: `${VAR}_FILE`
 
 `${VAR}` in a configuration file checks `${VAR}_FILE` first. If that names a readable file, its contents (trimmed) are used. Otherwise the environment variable is used, exactly as before.
 
@@ -36,6 +36,23 @@ Gatus substitutes `${VAR}` from the environment. **On Docker Swarm there is no s
 
 The remaining option is a credential in the service spec, readable by anything that can reach the Docker API. That is what this avoids.
 
+## Change 2: an hourly SQLite backup
+
+With `GATUS_SQLITE_BACKUP_PATH` set and SQLite storage, Gatus writes a copy of its database to that path with `VACUUM INTO`: once at start, then every hour at `GATUS_SQLITE_BACKUP_MINUTE` (default `50`). The copy goes to `<path>.tmp` and is renamed into place only when complete. Unset, nothing changes.
+
+```yaml
+environment:
+  - GATUS_SQLITE_BACKUP_PATH=/data/backup/gatus.db
+```
+
+One new file, `storage/store/sql/backup.go`, started from `NewStore` and stopped from `Close`, plus tests.
+
+### Why
+
+Gatus runs SQLite in WAL mode. WAL needs every process that opens the database on the same host, sharing its `-shm` file, so a backup tool in another container is only safe on the same node as Gatus. On Docker Swarm nothing keeps two services on one node: placement is checked only when a task is scheduled, so a sidecar can be left on another node after Gatus moves, where opening the database risks the live copy. And the image is distroless, so nothing can run inside Gatus's own container.
+
+`VACUUM INTO` from Gatus itself avoids all of that: the process that owns the database writes a consistent copy while it keeps running, wherever it runs. A snapshot of the live `.db`, `-wal` and `-shm` files is not a reliable substitute.
+
 ## Upstream position
 
 - [#1399](https://github.com/TwiN/gatus/issues/1399) — closed `not_planned`: *"You can use environment variables in the configuration. That alone should be sufficient, as most deployment mechanisms allow ways to securely mount secrets as an environment variable."* True of Kubernetes; not of Swarm.
@@ -56,7 +73,7 @@ That PR returns an empty string when the file cannot be read. This logs the fail
 
 ## Releasing
 
-Tag `v<upstream>-<n>-secrets` and push, or run the `publish-fork` workflow. It runs the config tests before publishing to `ghcr.io/scyto/gatus`.
+Tag `v<upstream>-<n>-secrets-backup` and push, or run the `publish-fork` workflow. It runs the config and backup tests before publishing to `ghcr.io/scyto/gatus`. (`v5.36.0-12-secrets` predates the backup.)
 
 The tag mirrors `git describe`: `v5.36.0-12-secrets` means *twelve upstream commits past v5.36.0, plus this fork's change*. A running image therefore says exactly which upstream code it carries, and that it is not stock.
 
@@ -78,6 +95,6 @@ So this branch sits on upstream `master` rather than the release tag. When the n
 git fetch upstream --tags
 git rebase v5.37.0          # expect a conflict only if config.go's expansion changes
 #                           # (v5.36.0 needed master instead -- see above)
-go test ./config/...
-git tag v5.37.0-secrets && git push origin v5.37.0-secrets
+go test ./config/... ./storage/store/sql/...
+git tag v5.37.0-secrets-backup && git push origin v5.37.0-secrets-backup
 ```
