@@ -165,4 +165,10 @@ func TestUntilMinute(t *testing.T) {
 			t.Errorf("untilMinute(%s, %d): expected %s, got %s", scenario.now, scenario.minute, scenario.expected, actual)
 		}
 	}
+	// A zone with a half-hour offset: the minute is the local wall-clock minute.
+	india := time.FixedZone("IST", 5*60*60+30*60)
+	now := time.Date(2026, 9, 25, 13, 10, 0, 0, india)
+	if actual := untilMinute(now, 50); actual != 40*time.Minute {
+		t.Errorf("untilMinute(13:10 IST, 50): expected 40m0s, got %s", actual)
+	}
 }

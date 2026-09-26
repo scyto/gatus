@@ -131,7 +131,7 @@ func sameFile(a, b string) bool {
 
 // untilMinute returns the time from now until the next time the minute past the hour is minute.
 func untilMinute(now time.Time, minute int) time.Duration {
-	next := now.Truncate(time.Hour).Add(time.Duration(minute) * time.Minute)
+	next := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), minute, 0, 0, now.Location())
 	if !next.After(now) {
 		next = next.Add(time.Hour)
 	}
