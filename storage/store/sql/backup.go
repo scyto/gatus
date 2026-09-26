@@ -13,8 +13,13 @@ import (
 
 const defaultBackupMinute = 50
 
-// ErrBackupPathNotSpecified is the error returned when Backup is called with a blank path
-var ErrBackupPathNotSpecified = errors.New("backup path cannot be empty")
+var (
+	// ErrBackupPathNotSpecified is the error returned when Backup is called with a blank path
+	ErrBackupPathNotSpecified = errors.New("backup path cannot be empty")
+
+	// ErrBackupPathIsDatabase is the error returned when the backup path is the database itself
+	ErrBackupPathIsDatabase = errors.New("backup path cannot be the database or one of its -wal, -shm or -journal files")
+)
 
 // startSQLiteBackup starts writing a copy of the SQLite database to the path in
 // GATUS_SQLITE_BACKUP_PATH: once at start, then every hour at the minute in
@@ -59,6 +64,9 @@ func (s *Store) Backup(path string) error {
 	if len(path) == 0 {
 		return ErrBackupPathNotSpecified
 	}
+	if s.isDatabaseFile(path) {
+		return ErrBackupPathIsDatabase
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -71,6 +79,28 @@ func (s *Store) Backup(path string) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// isDatabaseFile reports whether path is the store's database file, or one of the
+// files SQLite keeps beside it, by name or as the same file.
+func (s *Store) isDatabaseFile(path string) bool {
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+		if sameFile(path, s.path+suffix) || sameFile(path+".tmp", s.path+suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameFile(a, b string) bool {
+	if absA, errA := filepath.Abs(a); errA == nil {
+		if absB, errB := filepath.Abs(b); errB == nil && absA == absB {
+			return true
+		}
+	}
+	infoA, errA := os.Stat(a)
+	infoB, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(infoA, infoB)
 }
 
 // untilMinute returns the time from now until the next time the minute past the hour is minute.

@@ -63,6 +63,24 @@ func TestStore_BackupCreatesDirectory(t *testing.T) {
 	}
 }
 
+func TestStore_BackupRefusesTheDatabase(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := dir + "/TestStore_BackupRefusesTheDatabase.db"
+	store, _ := NewStore("sqlite", dbPath, false, storage.DefaultMaximumNumberOfResults, storage.DefaultMaximumNumberOfEvents)
+	defer store.Close()
+	if err := os.Symlink(dbPath, dir+"/link.db"); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{dbPath, dbPath + "-wal", dbPath + "-shm", dir + "/./TestStore_BackupRefusesTheDatabase.db", dir + "/link.db"} {
+		if err := store.Backup(path); !errors.Is(err, ErrBackupPathIsDatabase) {
+			t.Errorf("Backup(%s): expected ErrBackupPathIsDatabase, got %v", path, err)
+		}
+	}
+	if err := store.InsertEndpointResult(&testEndpoint, &testSuccessfulResult); err != nil {
+		t.Error("expected the database to still work, got", err.Error())
+	}
+}
+
 func TestStore_BackupWithBlankPath(t *testing.T) {
 	store, _ := NewStore("sqlite", t.TempDir()+"/TestStore_BackupWithBlankPath.db", false, storage.DefaultMaximumNumberOfResults, storage.DefaultMaximumNumberOfEvents)
 	defer store.Close()
