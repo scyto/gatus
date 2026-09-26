@@ -146,6 +146,12 @@ func TestStore_StartSQLiteBackup(t *testing.T) {
 	if store.stopBackup == nil {
 		t.Error("expected the backup to have a stop function")
 	}
+	// Close waits for the backup to stop.
+	select {
+	case <-store.backupDone:
+	default:
+		t.Error("expected the backup to have stopped once Close returned")
+	}
 }
 
 func TestUntilMinute(t *testing.T) {
@@ -170,5 +176,27 @@ func TestUntilMinute(t *testing.T) {
 	now := time.Date(2026, 9, 25, 13, 10, 0, 0, india)
 	if actual := untilMinute(now, 50); actual != 40*time.Minute {
 		t.Errorf("untilMinute(13:10 IST, 50): expected 40m0s, got %s", actual)
+	}
+	// Daylight saving changes: the next time the clock shows the minute, not an hour on.
+	dstScenarios := []struct {
+		zone     string
+		nowUTC   string
+		expected time.Duration
+	}{
+		// Lord Howe springs forward half an hour, 02:00 to 02:30: 01:55 to 02:50 is 25 minutes.
+		{"Australia/Lord_Howe", "2026-10-03T15:25:00Z", 25 * time.Minute},
+		// Los Angeles falls back, 02:00 PDT to 01:00 PST: 01:55 PDT to 01:50 PST is 55 minutes.
+		{"America/Los_Angeles", "2026-11-01T08:55:00Z", 55 * time.Minute},
+	}
+	for _, scenario := range dstScenarios {
+		location, err := time.LoadLocation(scenario.zone)
+		if err != nil {
+			t.Skipf("no time zone data for %s: %s", scenario.zone, err)
+		}
+		now, _ := time.Parse(time.RFC3339, scenario.nowUTC)
+		now = now.In(location)
+		if actual := untilMinute(now, 50); actual != scenario.expected {
+			t.Errorf("untilMinute(%s, 50): expected %s, got %s", now, scenario.expected, actual)
+		}
 	}
 }

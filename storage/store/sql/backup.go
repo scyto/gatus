@@ -41,10 +41,12 @@ func (s *Store) startSQLiteBackup() {
 	}
 	var ctx context.Context
 	ctx, s.stopBackup = context.WithCancel(context.Background())
+	s.backupDone = make(chan struct{})
 	go s.backupEveryHour(ctx, path, minute)
 }
 
 func (s *Store) backupEveryHour(ctx context.Context, path string, minute int) {
+	defer close(s.backupDone)
 	for {
 		if err := s.Backup(path); err != nil {
 			logr.Errorf("[sql.backupEveryHour] Failed to back up the database to %s: %s", path, err.Error())
@@ -129,11 +131,15 @@ func sameFile(a, b string) bool {
 	return errA == nil && errB == nil && os.SameFile(infoA, infoB)
 }
 
-// untilMinute returns the time from now until the next time the minute past the hour is minute.
+// untilMinute returns the time from now until the clock next shows minute past the hour.
+// It steps a minute at a time rather than adding an hour, so a daylight saving
+// change of less than an hour cannot move it off that minute.
 func untilMinute(now time.Time, minute int) time.Duration {
-	next := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), minute, 0, 0, now.Location())
-	if !next.After(now) {
-		next = next.Add(time.Hour)
+	next := now.Add(-time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond()))
+	for {
+		next = next.Add(time.Minute)
+		if next.Minute() == minute {
+			return next.Sub(now)
+		}
 	}
-	return next.Sub(now)
 }
