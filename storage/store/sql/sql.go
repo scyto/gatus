@@ -1,6 +1,7 @@
 package sql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -63,6 +64,9 @@ type Store struct {
 
 	maximumNumberOfResults int // maximum number of results that an endpoint can have
 	maximumNumberOfEvents  int // maximum number of events that an endpoint can have
+
+	stopBackup context.CancelFunc // stops the hourly SQLite backup, if one was started
+	backupDone chan struct{}      // closed when the hourly SQLite backup has stopped
 }
 
 // NewStore initializes the database and creates the schema if it doesn't already exist in the path specified
@@ -100,6 +104,9 @@ func NewStore(driver, path string, caching bool, maximumNumberOfResults, maximum
 	}
 	if caching {
 		store.writeThroughCache = gocache.NewCache().WithMaxSize(10000)
+	}
+	if driver == "sqlite" {
+		store.startSQLiteBackup()
 	}
 	return store, nil
 }
@@ -576,6 +583,12 @@ func (s *Store) Save() error {
 
 // Close the database handle
 func (s *Store) Close() {
+	if s.stopBackup != nil {
+		s.stopBackup()
+		// Wait for a backup in progress, so it neither outlives the database nor
+		// races the next store's backup for the same file.
+		<-s.backupDone
+	}
 	_ = s.db.Close()
 	if s.writeThroughCache != nil {
 		// Clear the cache too. If the store's been closed, we don't want to keep the cache around.
