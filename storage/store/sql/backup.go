@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -51,11 +52,15 @@ func (s *Store) backupEveryHour(ctx context.Context, path string, minute int) {
 	}
 }
 
-// Backup writes a consistent copy of the SQLite database to path with VACUUM INTO.
-// The copy is written to path+".tmp" and renamed to path only once it is complete.
+// Backup writes a consistent copy of the SQLite database to path with VACUUM INTO,
+// creating path's directory if needed. The copy is written to path+".tmp" and
+// renamed to path only once it is complete.
 func (s *Store) Backup(path string) error {
 	if len(path) == 0 {
 		return ErrBackupPathNotSpecified
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
 	}
 	tmp := path + ".tmp"
 	if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {

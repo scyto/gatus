@@ -38,7 +38,7 @@ The remaining option is a credential in the service spec, readable by anything t
 
 ## Change 2: an hourly SQLite backup
 
-With `GATUS_SQLITE_BACKUP_PATH` set and SQLite storage, Gatus writes a copy of its database to that path with `VACUUM INTO`: once at start, then every hour at `GATUS_SQLITE_BACKUP_MINUTE` (default `50`). The copy goes to `<path>.tmp` and is renamed into place only when complete. Unset, nothing changes.
+With `GATUS_SQLITE_BACKUP_PATH` set and SQLite storage, Gatus writes a copy of its database to that path with `VACUUM INTO`, creating its directory if needed: once at start, then every hour at `GATUS_SQLITE_BACKUP_MINUTE` (default `50`). The copy goes to `<path>.tmp` and is renamed into place only when complete. Unset, nothing changes.
 
 ```yaml
 environment:

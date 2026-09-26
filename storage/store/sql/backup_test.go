@@ -51,6 +51,18 @@ func TestStore_Backup(t *testing.T) {
 	}
 }
 
+func TestStore_BackupCreatesDirectory(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore("sqlite", dir+"/TestStore_BackupCreatesDirectory.db", false, storage.DefaultMaximumNumberOfResults, storage.DefaultMaximumNumberOfEvents)
+	defer store.Close()
+	if err := store.Backup(dir + "/not/yet/there/gatus.db"); err != nil {
+		t.Fatal("expected no error, got", err.Error())
+	}
+	if _, err := os.Stat(dir + "/not/yet/there/gatus.db"); err != nil {
+		t.Error("expected the backup in a directory Backup created, got", err)
+	}
+}
+
 func TestStore_BackupWithBlankPath(t *testing.T) {
 	store, _ := NewStore("sqlite", t.TempDir()+"/TestStore_BackupWithBlankPath.db", false, storage.DefaultMaximumNumberOfResults, storage.DefaultMaximumNumberOfEvents)
 	defer store.Close()
